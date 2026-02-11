@@ -314,3 +314,192 @@ select:focus {
         transform: rotate(360deg);
     }
 }
+
+/* Mobile Optimization (max-width: 768px) */
+@media (max-width: 768px) {
+    :root {
+        --radius-lg: 24px;
+    }
+
+    html,
+    body {
+        font-size: 16px;
+        /* Base for rem, but we render text larger */
+    }
+
+    body {
+        line-height: 1.6;
+    }
+
+    p,
+    li,
+    input,
+    textarea,
+    .flashcard-content {
+        font-size: 18px !important;
+    }
+
+    h1 {
+        font-size: 1.75rem;
+        margin-bottom: 0.5rem;
+    }
+
+    h2 {
+        font-size: 1.5rem;
+    }
+
+    h3 {
+        font-size: 1.3rem;
+    }
+
+    .container {
+        padding: 1rem;
+        padding-bottom: 120px;
+        /* Space for fixed bottom elements */
+        max-width: 100%;
+    }
+
+    /* Layout Reset */
+    .flex {
+        flex-wrap: wrap;
+    }
+
+    /* Header modifications for mobile */
+    header.flex {
+        flex-direction: column;
+        align-items: stretch;
+        /* Full width */
+        gap: 1rem;
+        text-align: center;
+        margin-bottom: 1.5rem !important;
+    }
+
+    header div.flex {
+        /* Button groups in header */
+        flex-direction: row;
+        gap: 0.5rem;
+    }
+
+    header div.flex button {
+        flex: 1;
+        justify-content: center;
+    }
+
+    /* Stats Grid to Single Column */
+    .stats-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+
+    /* Buttons optimized for touch */
+    .btn {
+        min-height: 48px;
+        /* Min 44px+ requirement */
+        font-size: 1rem;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        /* Full width usually easier on mobile */
+        margin-bottom: 0.5rem;
+        /* Spacing between stacked buttons */
+    }
+
+    /* Exceptions for button groups that should stay inline */
+    .flex.gap-2>.btn {
+        width: auto;
+        flex: 1;
+        margin-bottom: 0;
+    }
+
+    /* Card Item List */
+    .card {
+        padding: 1.25rem;
+        margin-bottom: 1rem;
+    }
+
+    .card .flex.justify-between {
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .card .flex.gap-2 {
+        /* Edit/Delete buttons row */
+        flex-direction: row;
+        width: 100%;
+    }
+
+    /* Inputs */
+    input,
+    textarea,
+    select {
+        font-size: 18px;
+        /* Prevent iOS zoom */
+        padding: 12px;
+    }
+
+    /* --- Study Screen Enhancements --- */
+
+    /* Make the study container take full height minus header */
+    .study-container {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        /* items start from top */
+        height: auto;
+    }
+
+    .flashcard {
+        min-height: 45vh;
+        margin: 1rem 0 2rem 0;
+        padding: 1.5rem;
+        /* Center content vertically */
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    /* Fixed Bottom Action Bar */
+    .action-bar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: var(--surface-color);
+        /* Match theme */
+        border-top: 1px solid var(--border-color);
+        padding: 1rem;
+        padding-bottom: max(1rem, env(safe-area-inset-bottom));
+        /* iPhone X+ safe area */
+        z-index: 1000;
+
+        display: flex;
+        flex-direction: row;
+        /* Horizontal buttons */
+        gap: 8px;
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .grade-btn {
+        height: 56px;
+        /* Big touch target */
+        font-size: 1rem;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        line-height: 1.1;
+        border-radius: 8px;
+    }
+
+    .grade-btn small {
+        font-size: 0.75rem;
+        opacity: 0.9;
+    }
+
+    /* Disable hover transform */
+    .card:hover {
+        transform: none;
+    }
+}
