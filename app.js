@@ -1,883 +1,626 @@
 /**
- * DeepGalaxy - Offline Flashcard App (Vanilla JS + IndexedDB)
- * Implements strict SM-2 algorithm and user requirements.
+ * DeepGalaxy - Offline Flashcard App
+ * SM-2 algorithm + statistical correction
  */
+const DB_NAME = "DeepGalaxyDB", DB_VERSION = 1;
 
-// --- Constants & Config ---
-const DB_NAME = "DeepGalaxyDB";
-const DB_VERSION = 1;
-
-// --- State Management ---
 const state = {
-    currentView: 'dashboard', // dashboard, deckList, deckEditor, study, stats
+    currentView: 'dashboard',
     activeDeckId: null,
     studyQueue: [],
     currentCardIndex: 0,
-    isShowingAnswer: false
+    isShowingAnswer: false,
+    returnToStudy: false,
+    cardSortOrder: 'desc', // desc=new first, asc=old first
+    studyDeckFilter: null  // null=auto, deckId=priority deck
 };
 
-// --- Database Layer (IndexedDB Wrapper) ---
+// --- Database ---
 const db = {
     instance: null,
-
     async init() {
         return new Promise((resolve, reject) => {
-            const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-            request.onerror = (event) => reject("DB Error: " + event.target.error);
-
-            request.onupgradeneeded = (event) => {
-                const db = event.target.result;
-
-                // Decks Store
-                if (!db.objectStoreNames.contains('decks')) {
-                    const deckStore = db.createObjectStore('decks', { keyPath: 'id', autoIncrement: true });
-                    deckStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+            const req = indexedDB.open(DB_NAME, DB_VERSION);
+            req.onerror = e => reject("DB Error: " + e.target.error);
+            req.onupgradeneeded = e => {
+                const d = e.target.result;
+                if (!d.objectStoreNames.contains('decks')) {
+                    d.createObjectStore('decks', { keyPath: 'id', autoIncrement: true });
                 }
-
-                // Cards Store
-                if (!db.objectStoreNames.contains('cards')) {
-                    const cardStore = db.createObjectStore('cards', { keyPath: 'id', autoIncrement: true });
-                    cardStore.createIndex('deckId', 'deckId', { unique: false });
-                    cardStore.createIndex('nextReviewAt', 'nextReviewAt', { unique: false });
-                    cardStore.createIndex('priorityScore', 'priorityScore', { unique: false });
+                if (!d.objectStoreNames.contains('cards')) {
+                    const cs = d.createObjectStore('cards', { keyPath: 'id', autoIncrement: true });
+                    cs.createIndex('deckId', 'deckId', { unique: false });
+                    cs.createIndex('nextReviewAt', 'nextReviewAt', { unique: false });
                 }
-
-                // Logs Store
-                if (!db.objectStoreNames.contains('logs')) {
-                    const logStore = db.createObjectStore('logs', { keyPath: 'id', autoIncrement: true });
-                    logStore.createIndex('cardId', 'cardId', { unique: false });
-                    logStore.createIndex('reviewedAt', 'reviewedAt', { unique: false });
-                    logStore.createIndex('q', 'q', { unique: false });
+                if (!d.objectStoreNames.contains('logs')) {
+                    const ls = d.createObjectStore('logs', { keyPath: 'id', autoIncrement: true });
+                    ls.createIndex('cardId', 'cardId', { unique: false });
+                    ls.createIndex('reviewedAt', 'reviewedAt', { unique: false });
                 }
             };
-
-            request.onsuccess = (event) => {
-                this.instance = event.target.result;
-                resolve(this.instance);
-            };
+            req.onsuccess = e => { this.instance = e.target.result; resolve(); };
         });
     },
-
-    async getAll(storeName) {
-        return new Promise((resolve) => {
-            const tx = this.instance.transaction(storeName, 'readonly');
-            const store = tx.objectStore(storeName);
-            const request = store.getAll();
-            request.onsuccess = () => resolve(request.result);
-        });
+    _tx(store, mode) {
+        return this.instance.transaction(store, mode).objectStore(store);
     },
-
-    async get(storeName, key) {
-        return new Promise((resolve) => {
-            const tx = this.instance.transaction(storeName, 'readonly');
-            const store = tx.objectStore(storeName);
-            const request = store.get(key);
-            request.onsuccess = () => resolve(request.result);
-        });
-    },
-
-    async add(storeName, item) {
-        return new Promise((resolve) => {
-            const tx = this.instance.transaction(storeName, 'readwrite');
-            const store = tx.objectStore(storeName);
-            const request = store.add(item);
-            request.onsuccess = () => resolve(request.result);
-        });
-    },
-
-    async put(storeName, item) {
-        return new Promise((resolve) => {
-            const tx = this.instance.transaction(storeName, 'readwrite');
-            const store = tx.objectStore(storeName);
-            const request = store.put(item);
-            request.onsuccess = () => resolve(request.result);
-        });
-    },
-
-    async delete(storeName, key) {
-        return new Promise((resolve) => {
-            const tx = this.instance.transaction(storeName, 'readwrite');
-            const store = tx.objectStore(storeName);
-            const request = store.delete(key);
-            request.onsuccess = () => resolve();
-        });
-    },
-
-    async getCardsByDeck(deckId) {
-        return new Promise((resolve) => {
-            const tx = this.instance.transaction('cards', 'readonly');
-            const store = tx.objectStore('cards');
-            const index = store.index('deckId');
-            const request = index.getAll(IDBKeyRange.only(Number(deckId)));
-            request.onsuccess = () => resolve(request.result);
+    getAll(s) { return new Promise(r => { const req = this._tx(s, 'readonly').getAll(); req.onsuccess = () => r(req.result); }); },
+    get(s, k) { return new Promise(r => { const req = this._tx(s, 'readonly').get(k); req.onsuccess = () => r(req.result); }); },
+    add(s, v) { return new Promise(r => { const req = this._tx(s, 'readwrite').add(v); req.onsuccess = () => r(req.result); }); },
+    put(s, v) { return new Promise(r => { const req = this._tx(s, 'readwrite').put(v); req.onsuccess = () => r(req.result); }); },
+    del(s, k) { return new Promise(r => { const req = this._tx(s, 'readwrite').delete(k); req.onsuccess = () => r(); }); },
+    getCardsByDeck(deckId) {
+        return new Promise(r => {
+            const idx = this._tx('cards', 'readonly').index('deckId');
+            const req = idx.getAll(IDBKeyRange.only(Number(deckId)));
+            req.onsuccess = () => r(req.result);
         });
     }
 };
 
-// --- Algorithm & Logic Core ---
-
+// --- SM-2 Algorithm ---
 const Logic = {
-    // Math Utilities
     now() { return new Date(); },
 
-    // Calculate SM-2 updates
     calculateSM2(card, q) {
         let { n, I, EF } = card;
         let nextN, nextI, nextEF;
-
-        if (q < 3) {
-            nextN = 0;
-            nextI = 1; // 1 day
-        } else {
+        if (q < 3) { nextN = 0; nextI = 1; }
+        else {
             nextN = n + 1;
-            if (nextN === 1) {
-                nextI = 1;
-            } else if (nextN === 2) {
-                nextI = 6;
-            } else {
-                nextI = Math.round(I * EF);
-            }
+            if (nextN === 1) nextI = 1;
+            else if (nextN === 2) nextI = 6;
+            else nextI = Math.round(I * EF);
         }
-
-        let delta = (5 - q);
-        let efChange = (0.1 - delta * (0.08 + delta * 0.02));
-        nextEF = EF + efChange;
+        const delta = 5 - q;
+        nextEF = EF + (0.1 - delta * (0.08 + delta * 0.02));
         if (nextEF < 1.3) nextEF = 1.3;
-
         return { n: nextN, I: nextI, EF: nextEF };
     },
 
-    // Extended Statistics Logic for priority
-    // User global forget rate (last 30 days)
     async getUserStats() {
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        const isoDate = thirtyDaysAgo.toISOString();
-
-        return new Promise((resolve) => {
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 30);
+        const iso = cutoff.toISOString();
+        return new Promise(r => {
             const tx = db.instance.transaction('logs', 'readonly');
-            const store = tx.objectStore('logs');
-            const index = store.index('reviewedAt');
-            const range = IDBKeyRange.lowerBound(isoDate);
-            const request = index.getAll(range);
-
-            request.onsuccess = () => {
-                const result = request.result;
-                if (!result || result.length === 0) {
-                    resolve({ forgetRate: 0, total: 0 });
-                    return;
-                }
-
-                const failed = result.filter(l => l.q < 3).length;
-                const forgetRate = failed / result.length;
-                resolve({ forgetRate, total: result.length });
+            const idx = tx.objectStore('logs').index('reviewedAt');
+            const req = idx.getAll(IDBKeyRange.lowerBound(iso));
+            req.onsuccess = () => {
+                const res = req.result;
+                if (!res || !res.length) { r({ forgetRate: 0, total: 0 }); return; }
+                r({ forgetRate: res.filter(l => l.q < 3).length / res.length, total: res.length });
             };
-
-            request.onerror = () => resolve({ forgetRate: 0, total: 0 });
+            req.onerror = () => r({ forgetRate: 0, total: 0 });
         });
     },
 
-    // Calculate Card Parameters (Retention, Priority, etc.)
     calculateCardStats(card, userForgetRate) {
-        if (card.n === 0) {
-            return {
-                retention: 0,
-                forgetRisk: 1.0,
-                priorityScore: 100 // High priority for new cards
-            };
-        }
-
+        if (card.n === 0) return { retention: 0, forgetRisk: 1.0, priorityScore: 100 };
         const now = new Date();
-        const lastReview = card.lastReviewAt ? new Date(card.lastReviewAt) : new Date();
-        const t_days = (now - lastReview) / (1000 * 60 * 60 * 24);
-
-        const S = card.I * card.EF;
-        const safeS = S > 0 ? S : 0.1;
-
-        const retentionProbability = Math.exp(-t_days / safeS); // R(t)
-        const forgetRisk = 1 - retentionProbability; // Forecast forget rate
-
-        const successes = card.totalSuccesses || card.n;
-        const retentionScore = Math.min(100, Math.log2(1 + successes) * card.EF * 10);
-
-        let overdueDays = 0;
-        if (card.nextReviewAt) {
-            const dueDate = new Date(card.nextReviewAt);
-            if (now > dueDate) {
-                overdueDays = (now - dueDate) / (1000 * 60 * 60 * 24);
-            }
-        }
-
-        const easePenalty = 1.0 / card.EF;
-
-        const priorityScore =
-            (forgetRisk * 0.5) +
-            ((1 - retentionScore / 100) * 0.3) +
-            (easePenalty * 0.1) +
-            (Math.log10(1 + overdueDays) * 0.1);
-
-        return {
-            retentionProbability,
-            forgetRisk,
-            retentionScore,
-            priorityScore
-        };
+        const lastReview = card.lastReviewAt ? new Date(card.lastReviewAt) : now;
+        const t = (now - lastReview) / 864e5;
+        const S = Math.max(card.I * card.EF, 0.1);
+        const ret = Math.exp(-t / S);
+        const risk = 1 - ret;
+        const rScore = Math.min(100, Math.log2(1 + (card.totalSuccesses || card.n)) * card.EF * 10);
+        let overdue = 0;
+        if (card.nextReviewAt) { const d = new Date(card.nextReviewAt); if (now > d) overdue = (now - d) / 864e5; }
+        const ps = risk * 0.5 + ((1 - rScore / 100) * 0.3) + (1.0 / card.EF) * 0.1 + Math.log10(1 + overdue) * 0.1;
+        return { retentionProbability: ret, forgetRisk: risk, retentionScore: rScore, priorityScore: ps };
     },
 
     async getDueCards() {
         const allCards = await db.getAll('cards');
         const now = new Date();
         const { forgetRate } = await this.getUserStats();
-
-        const cardsWithPriority = allCards.map(card => {
-            const stats = this.calculateCardStats(card, forgetRate);
-            return { ...card, ...stats };
-        });
-
-        const due = cardsWithPriority.filter(c => {
-            if (!c.nextReviewAt) return true; // New cards
-            const dueDate = new Date(c.nextReviewAt);
-            return dueDate <= now || c.priorityScore >= 0.6;
-        });
-
-        // Sort by priorityScore desc
+        const withP = allCards.map(c => ({ ...c, ...this.calculateCardStats(c, forgetRate) }));
+        const due = withP.filter(c => !c.nextReviewAt || new Date(c.nextReviewAt) <= now || c.priorityScore >= 0.6);
         due.sort((a, b) => b.priorityScore - a.priorityScore);
-
         return due;
     }
 };
 
-// --- UI Components / Renderer ---
+// --- Image Modal ---
+function openImageModal(src) {
+    const overlay = document.createElement('div');
+    overlay.className = 'img-modal-overlay';
+    overlay.onclick = () => overlay.remove();
+    const img = document.createElement('img');
+    img.src = src;
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'img-modal-close';
+    closeBtn.innerHTML = '✕';
+    closeBtn.onclick = e => { e.stopPropagation(); overlay.remove(); };
+    overlay.appendChild(img);
+    overlay.appendChild(closeBtn);
+    document.body.appendChild(overlay);
+}
 
+// --- UI ---
 const UI = {
     app: document.getElementById('app'),
+    render(t) { this.app.innerHTML = t; lucide.createIcons(); },
 
-    render(template) {
-        this.app.innerHTML = template;
-        lucide.createIcons();
-    },
-
-    // 1. Dashboard
+    // Dashboard
     async renderDashboard() {
         const stats = await Logic.getUserStats();
-        const logs = await db.getAll('logs');
-        const cards = await db.getAll('cards');
-        const dueCards = await Logic.getDueCards();
-
+        const [logs, cards, dueCards, decks] = await Promise.all([
+            db.getAll('logs'), db.getAll('cards'), Logic.getDueCards(), db.getAll('decks')
+        ]);
         const now = new Date();
-        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        const logs7d = logs.filter(l => new Date(l.reviewedAt) > sevenDaysAgo);
-        const success7d = logs7d.filter(l => l.q >= 3).length;
-        const rate7d = logs7d.length ? Math.round((success7d / logs7d.length) * 100) : 0;
+        const t7 = now.getTime() - 7 * 864e5;
+        const l7 = logs.filter(l => new Date(l.reviewedAt).getTime() > t7);
+        const rate7d = l7.length ? Math.round(l7.filter(l => l.q >= 3).length / l7.length * 100) : 0;
+        const bad = cards.filter(c => c.EF < 1.5).length;
 
-        const badCards = cards.filter(c => c.EF < 1.5).length;
+        // Deck filter options
+        const deckOpts = decks.map(d => `<option value="${d.id}" ${state.studyDeckFilter == d.id ? 'selected' : ''}>${d.name}</option>`).join('');
 
-        const html = `
-            <div class="container animate-fade-in">
-                <header class="flex justify-between items-center" style="margin-bottom: 2rem;">
-                    <h1>DeepGalaxy</h1>
-                    <div class="flex gap-2">
-                        <button class="btn btn-secondary" onclick="App.navigateTo('settings')">
-                            <i data-lucide="settings"></i> データ管理
-                        </button>
-                        <button class="btn btn-primary" onclick="App.navigateTo('deckList')">
-                            <i data-lucide="layers"></i> 単語帳管理
-                        </button>
-                    </div>
-                </header>
-
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <h3>今日の復習</h3>
-                        <div class="stat-value">${dueCards.length}</div>
-                    </div>
-                    <div class="stat-card">
-                        <h3>定着率 (7日)</h3>
-                        <div class="stat-value">${rate7d}%</div>
-                        <small>忘却率: ${(stats.forgetRate * 100).toFixed(1)}%</small>
-                    </div>
-                     <div class="stat-card">
-                        <h3>苦手カード</h3>
-                        <div class="stat-value" style="color: var(--warning-color); -webkit-text-fill-color: initial;">${badCards}</div>
-                    </div>
+        this.render(`
+        <div class="container animate-fade-in">
+            <header class="flex justify-between items-center" style="margin-bottom:2rem">
+                <h1>DeepGalaxy</h1>
+                <div class="flex gap-2">
+                    <button class="btn btn-secondary" onclick="App.navigateTo('settings')"><i data-lucide="settings"></i> データ管理</button>
+                    <button class="btn btn-primary" onclick="App.navigateTo('deckList')"><i data-lucide="layers"></i> 単語帳管理</button>
                 </div>
-
-                <div class="card" style="text-align: center; padding: 4rem 2rem;">
-                    <h2>学習を始めましょう</h2>
-                    <p style="color: var(--text-secondary); margin: 1rem 0 2rem;">今日優先すべきカードは ${dueCards.length} 枚です。</p>
-                    <button class="btn btn-primary" style="font-size: 1.25rem; padding: 1rem 3rem;" onclick="App.startSession()">
-                        <i data-lucide="play"></i> 学習開始
-                    </button>
+            </header>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>今日の復習</h3>
+                    <div class="stat-value">${dueCards.length}</div>
+                    <button class="btn btn-secondary" style="margin-top:.5rem;font-size:.9rem" onclick="App.showDueList()"><i data-lucide="list"></i> 一覧を見る</button>
                 </div>
+                <div class="stat-card"><h3>定着率 (7日)</h3><div class="stat-value">${rate7d}%</div><small>忘却率: ${(stats.forgetRate * 100).toFixed(1)}%</small></div>
+                <div class="stat-card"><h3>苦手カード</h3><div class="stat-value" style="color:var(--warn);-webkit-text-fill-color:initial">${bad}</div></div>
             </div>
-        `;
-        this.render(html);
+            <div class="card" style="text-align:center;padding:3rem 2rem">
+                <h2>学習を始めましょう</h2>
+                <p style="color:var(--txt2);margin:1rem 0">今日優先すべきカードは ${dueCards.length} 枚です。</p>
+                <div style="margin:1rem 0">
+                    <label style="color:var(--txt2);font-size:.9rem">優先する単語帳：</label>
+                    <select id="deckFilter" onchange="App.setDeckFilter(this.value)" style="padding:.5rem;min-width:160px">
+                        <option value="">自動（おまかせ）</option>
+                        ${deckOpts}
+                    </select>
+                </div>
+                <button class="btn btn-primary" style="font-size:1.25rem;padding:1rem 3rem" onclick="App.startSession()"><i data-lucide="play"></i> 学習開始</button>
+            </div>
+        </div>`);
     },
 
-    // 2. Deck List
+    // Deck List (⑦ show card count)
     async renderDeckList() {
         const decks = await db.getAll('decks');
+        const allCards = await db.getAll('cards');
+        const countMap = {};
+        allCards.forEach(c => { countMap[c.deckId] = (countMap[c.deckId] || 0) + 1; });
 
-        let decksHtml = decks.map(deck => `
-            <div class="card flex justify-between items-center">
-                <div>
-                    <h3>${deck.name}</h3>
-                    <p style="color: var(--text-secondary)">作成日: ${new Date(deck.createdAt).toLocaleDateString()}</p>
-                </div>
-                <div class="flex gap-2">
-                    <button class="btn btn-secondary" onclick="App.editDeck(${deck.id})">
-                        <i data-lucide="edit"></i> 編集
-                    </button>
-                    <button class="btn btn-secondary" onclick="App.manageCards(${deck.id})">
-                        <i data-lucide="list"></i> カード一覧
-                    </button>
-                     <button class="btn btn-danger" onclick="App.deleteDeck(${deck.id})">
-                        <i data-lucide="trash"></i>
-                    </button>
-                </div>
+        const rows = decks.map(d => `
+        <div class="card flex justify-between items-center">
+            <div>
+                <h3>${d.name}（${countMap[d.id] || 0}枚）</h3>
+                <p style="color:var(--txt2)">作成日: ${new Date(d.createdAt).toLocaleDateString()}</p>
             </div>
-        `).join('');
+            <div class="flex gap-2">
+                <button class="btn btn-secondary" onclick="App.editDeck(${d.id})"><i data-lucide="edit"></i> 編集</button>
+                <button class="btn btn-secondary" onclick="App.manageCards(${d.id})"><i data-lucide="list"></i> カード一覧</button>
+                <button class="btn btn-primary" onclick="App.createCard(${d.id})"><i data-lucide="plus"></i> カード追加</button>
+                <button class="btn btn-danger" onclick="App.deleteDeck(${d.id})"><i data-lucide="trash"></i></button>
+            </div>
+        </div>`).join('');
 
-        const html = `
-            <div class="container animate-fade-in">
-                <header class="flex justify-between items-center" style="margin-bottom: 2rem;">
-                    <button class="btn btn-secondary" onclick="App.navigateTo('dashboard')">
-                        <i data-lucide="arrow-left"></i> 戻る
-                    </button>
-                    <h1>単語帳一覧</h1>
-                    <button class="btn btn-primary" onclick="App.createDeck()">
-                        <i data-lucide="plus"></i> 新規作成
-                    </button>
-                </header>
-                <div class="flex flex-col gap-4">
-                    ${decksHtml || '<p style="text-align:center; color:var(--text-secondary)">単語帳がありません。「新規作成」から追加してください。</p>'}
-                </div>
-            </div>
-        `;
-        this.render(html);
+        this.render(`
+        <div class="container animate-fade-in">
+            <header class="flex justify-between items-center" style="margin-bottom:2rem">
+                <button class="btn btn-secondary" onclick="App.navigateTo('dashboard')"><i data-lucide="arrow-left"></i> 戻る</button>
+                <h1>単語帳一覧</h1>
+                <button class="btn btn-primary" onclick="App.createDeck()"><i data-lucide="plus"></i> 新規作成</button>
+            </header>
+            <div class="flex flex-col gap-4">${rows || '<p style="text-align:center;color:var(--txt2)">単語帳がありません。</p>'}</div>
+        </div>`);
     },
 
-    // 3. Card Manager
+    // Card Manager (② sort + ⑦ count)
     async renderCardManager(deckId) {
         const deck = await db.get('decks', deckId);
-        const cards = await db.getCardsByDeck(deckId);
+        let cards = await db.getCardsByDeck(deckId);
+        const total = cards.length;
 
-        let cardsHtml = cards.map(c => `
-             <div class="card">
-                <div class="flex justify-between">
-                    <div style="flex: 1">
-                        <strong>表:</strong> ${c.frontText || '(画像)'} <br>
-                        <small style="color: var(--text-secondary)">EF: ${c.EF.toFixed(2)} | 次回: ${c.nextReviewAt ? new Date(c.nextReviewAt).toLocaleDateString() : '未学習'}</small>
-                    </div>
-                    <div class="flex gap-2">
-                         <button class="btn btn-secondary" onclick="App.editCard(${c.id}, ${deckId})">
-                            <i data-lucide="edit"></i>
-                        </button>
-                        <button class="btn btn-danger" onclick="App.deleteCard(${c.id}, ${deckId})">
-                            <i data-lucide="trash"></i>
-                        </button>
-                    </div>
+        // Sort
+        cards.sort((a, b) => {
+            const ta = new Date(a.createdAt || 0).getTime();
+            const tb = new Date(b.createdAt || 0).getTime();
+            return state.cardSortOrder === 'desc' ? tb - ta : ta - tb;
+        });
+
+        const rows = cards.map(c => `
+        <div class="card">
+            <div class="flex justify-between">
+                <div style="flex:1">
+                    <strong>表:</strong> ${c.frontText || '(画像)'}<br>
+                    <small style="color:var(--txt2)">EF: ${c.EF.toFixed(2)} | 次回: ${c.nextReviewAt ? new Date(c.nextReviewAt).toLocaleDateString() : '未学習'}</small>
+                </div>
+                <div class="flex gap-2">
+                    <button class="btn btn-secondary" onclick="App.editCard(${c.id},${deckId})"><i data-lucide="edit"></i></button>
+                    <button class="btn btn-danger" onclick="App.deleteCard(${c.id},${deckId})"><i data-lucide="trash"></i></button>
                 </div>
             </div>
-        `).join('');
+        </div>`).join('');
 
-        const html = `
-             <div class="container animate-fade-in">
-                <header class="flex justify-between items-center" style="margin-bottom: 2rem;">
-                     <button class="btn btn-secondary" onclick="App.navigateTo('deckList')">
-                        <i data-lucide="arrow-left"></i> 戻る
-                    </button>
-                    <h1>${deck.name} - カード一覧</h1>
-                    <button class="btn btn-primary" onclick="App.createCard(${deckId})">
-                        <i data-lucide="plus"></i> カード追加
-                    </button>
-                </header>
-                 <div class="flex flex-col gap-4">
-                    ${cardsHtml || '<p style="text-align:center; color:var(--text-secondary)">カードがありません。</p>'}
+        this.render(`
+        <div class="container animate-fade-in">
+            <header class="flex justify-between items-center" style="margin-bottom:2rem">
+                <button class="btn btn-secondary" onclick="App.navigateTo('deckList')"><i data-lucide="arrow-left"></i> 戻る</button>
+                <h1>${deck.name}（${total}枚）</h1>
+                <button class="btn btn-primary" onclick="App.createCard(${deckId})"><i data-lucide="plus"></i> カード追加</button>
+            </header>
+            <div style="margin-bottom:1rem;display:flex;justify-content:flex-end;align-items:center;gap:.5rem">
+                <span style="color:var(--txt2);font-size:.85rem">並び替え：</span>
+                <div class="sort-toggle">
+                    <button class="${state.cardSortOrder === 'desc' ? 'active' : ''}" onclick="App.setSortOrder('desc',${deckId})">新しい順</button>
+                    <button class="${state.cardSortOrder === 'asc' ? 'active' : ''}" onclick="App.setSortOrder('asc',${deckId})">古い順</button>
                 </div>
             </div>
-        `;
-        this.render(html);
+            <div class="flex flex-col gap-4">${rows || '<p style="text-align:center;color:var(--txt2)">カードがありません。</p>'}</div>
+        </div>`);
     },
 
-    // 4. Study Mode
+    // Study Card (④ improved images, ⑤ fixed bottom bar)
     renderStudyCard(card, total, current) {
-        const frontContent = `
-            ${card.frontImage ? `<img src="${card.frontImage}" alt="Front">` : ''}
-            ${card.frontText ? `<p>${card.frontText}</p>` : ''}
-        `;
+        const mkImg = (src, alt) => {
+            if (!src) return '';
+            return `<div class="study-img-wrap">
+                <img src="${src}" alt="${alt}" class="study-img">
+                <button class="img-zoom-btn" onclick="event.stopPropagation();openImageModal('${src}')" title="拡大表示">🔍</button>
+            </div>`;
+        };
+        const front = mkImg(card.frontImage, '表') + (card.frontText ? `<p>${card.frontText}</p>` : '');
+        const back = mkImg(card.backImage, '裏') + (card.backText ? `<p>${card.backText}</p>` : '');
 
-        const backContent = `
-             ${card.backImage ? `<img src="${card.backImage}" alt="Back">` : ''}
-            ${card.backText ? `<p>${card.backText}</p>` : ''}
-        `;
-
-        const html = `
-            <div class="container animate-fade-in" style="height: 100vh; display: flex; flex-direction: column;">
-                <div class="flex justify-between items-center">
-                    <button class="btn btn-secondary" onclick="App.navigateTo('dashboard')">終了</button>
-                    <span>カード ${current + 1} / ${total}</span>
-                    <span>スコア: ${Math.round(card.priorityScore * 100) || 0}</span>
-                </div>
-
-                <div class="study-container" style="flex: 1; display: flex; flex-direction: column; justify-content: center;">
-                    <div class="flashcard" onclick="App.flipCard()">
-                        <div class="flashcard-content">
-                            <div style="color: var(--text-secondary); font-size: 0.9rem; text-transform: uppercase; margin-bottom: 1rem;">表（問題）</div>
-                            ${frontContent}
-                            ${state.isShowingAnswer ? `
-                                <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 2rem 0;">
-                                <div style="color: var(--text-secondary); font-size: 0.9rem; text-transform: uppercase; margin-bottom: 1rem;">裏（解答）</div>
-                                <div class="animate-fade-in">${backContent}</div>
-                            ` : '<p style="margin-top:2rem; color:var(--text-secondary); font-size:0.9rem;">(タップして解答を表示)</p>'}
-                        </div>
-                    </div>
-
-                    ${state.isShowingAnswer ? `
-                        <div class="action-bar animate-fade-in">
-                            <button class="grade-btn grade-1" onclick="App.submitReview(1)">
-                                全く覚えていない<br><small>再学習</small>
-                            </button>
-                            <button class="grade-btn grade-2" onclick="App.submitReview(2)">
-                                あやふや<br><small>難しい</small>
-                            </button>
-                            <button class="grade-btn grade-3" onclick="App.submitReview(3)">
-                                だいたい<br><small>普通</small>
-                            </button>
-                            <button class="grade-btn grade-4" onclick="App.submitReview(4)">
-                                完璧<br><small>簡単</small>
-                            </button>
-                        </div>
-                    ` : ''}
-                </div>
+        this.render(`
+        <div class="container animate-fade-in" style="min-height:100vh;display:flex;flex-direction:column">
+            <div class="flex justify-between items-center">
+                <button class="btn btn-secondary" onclick="App.navigateTo('dashboard')">終了</button>
+                <span>カード ${current + 1} / ${total}</span>
+                <span>スコア: ${Math.round(card.priorityScore * 100) || 0}</span>
             </div>
-        `;
-        this.render(html);
+            <div class="study-container" style="flex:1;display:flex;flex-direction:column;justify-content:center">
+                <div class="flashcard" onclick="App.flipCard()">
+                    <div class="flashcard-content">
+                        <div style="color:var(--txt2);font-size:.9rem;margin-bottom:1rem">表（問題）</div>
+                        ${front}
+                        ${state.isShowingAnswer ? `
+                            <hr style="border:0;border-top:1px solid var(--brd);margin:2rem 0">
+                            <div style="color:var(--txt2);font-size:.9rem;margin-bottom:1rem">裏（解答）</div>
+                            <div class="animate-fade-in">${back}</div>
+                        ` : '<p style="margin-top:2rem;color:var(--txt2);font-size:.9rem">(タップして解答を表示)</p>'}
+                    </div>
+                </div>
+                ${state.isShowingAnswer ? `
+                <div style="margin-top:1rem;display:flex;gap:1rem;justify-content:center">
+                    <button class="btn btn-secondary" onclick="App.editCardFromStudy(${card.id},${card.deckId})"><i data-lucide="edit"></i> 編集</button>
+                    <button class="btn btn-danger" onclick="App.deleteCardFromStudy(${card.id})"><i data-lucide="trash"></i> 削除</button>
+                </div>
+                <div class="action-bar animate-fade-in">
+                    <button class="grade-btn grade-1" onclick="App.submitReview(1)">再学習</button>
+                    <button class="grade-btn grade-2" onclick="App.submitReview(2)">難しい</button>
+                    <button class="grade-btn grade-3" onclick="App.submitReview(3)">普通</button>
+                    <button class="grade-btn grade-4" onclick="App.submitReview(4)">簡単</button>
+                </div>` : ''}
+            </div>
+        </div>`);
     },
 
     renderEmptySession() {
-        const html = `
-            <div class="container animate-fade-in" style="text-align: center; padding-top: 4rem;">
-                <h1>セッション完了！ 🎉</h1>
-                <p>予定されていたカードの学習がすべて終わりました。</p>
-                <div style="margin-top: 2rem;">
-                    <button class="btn btn-primary" onclick="App.navigateTo('dashboard')">ダッシュボードへ戻る</button>
-                </div>
-            </div>
-        `;
-        this.render(html);
+        this.render(`
+        <div class="container animate-fade-in" style="text-align:center;padding-top:4rem">
+            <h1>セッション完了！ 🎉</h1>
+            <p>予定されていたカードの学習がすべて終わりました。</p>
+            <div style="margin-top:2rem"><button class="btn btn-primary" onclick="App.navigateTo('dashboard')">ダッシュボードへ戻る</button></div>
+        </div>`);
     },
 
-    // 5. Settings / Data Management
+    // Settings
     renderSettings() {
-        const html = `
-            <div class="container animate-fade-in" style="max-width: 800px;">
-                <header class="flex justify-between items-center" style="margin-bottom: 2rem;">
-                    <button class="btn btn-secondary" onclick="App.navigateTo('dashboard')">
-                        <i data-lucide="arrow-left"></i> 戻る
-                    </button>
-                    <h1>データ管理</h1>
-                    <div style="width: 40px;"></div>
-                </header>
-
-                <div class="card">
-                    <h3><i data-lucide="save"></i> 手動バックアップ・復元</h3>
-                    <p style="color: var(--text-secondary); margin: 1rem 0;">
-                        単語帳データをファイル（JSON形式）として保存します。<br>
-                        PCとスマホ間でデータを移動する場合や、万が一のバックアップに使用してください。
-                    </p>
-                    <div class="flex gap-4" style="flex-wrap: wrap;">
-                        <button class="btn btn-primary" onclick="App.exportBackup()">
-                            <i data-lucide="download"></i> データを書き出す (保存)
-                        </button>
-                        <button class="btn btn-secondary" onclick="App.triggerImport()">
-                            <i data-lucide="upload"></i> データを読み込む (復元)
-                        </button>
-                        <input type="file" id="importFile" accept=".json" style="display: none;" onchange="App.importBackup(this)">
-                    </div>
-                </div>
-
-                <div class="card">
-                    <h3><i data-lucide="cloud"></i> Google Drive 連携（手動）</h3>
-                    <p style="color: var(--text-secondary); margin: 1rem 0;">
-                        Google Driveを利用して、PCとiPhone等の間でデータを共有できます。<br>
-                        <strong>手順:</strong><br>
-                        1. 上記の「データを書き出す」でファイルを保存します。<br>
-                        2. 下のボタンからGoogle Driveを開き、そのファイルをアップロードしてください。<br>
-                        3. 別の端末でGoogle Driveからファイルをダウンロードし、「データを読み込む」を行ってください。
-                    </p>
-                    <a href="https://drive.google.com/" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="text-decoration: none;">
-                        <i data-lucide="external-link"></i> Google Drive を開く
-                    </a>
+        this.render(`
+        <div class="container animate-fade-in" style="max-width:800px">
+            <header class="flex justify-between items-center" style="margin-bottom:2rem">
+                <button class="btn btn-secondary" onclick="App.navigateTo('dashboard')"><i data-lucide="arrow-left"></i> 戻る</button>
+                <h1>データ管理</h1>
+                <div style="width:40px"></div>
+            </header>
+            <div class="card">
+                <h3><i data-lucide="save"></i> 手動バックアップ・復元</h3>
+                <p style="color:var(--txt2);margin:1rem 0">
+                    単語帳データをファイルとして保存します。<br>
+                    ファイル名は常に <strong>deepgalaxy_backup.json</strong> で固定です。<br>
+                    同じ名前で保存されます。Google Driveに置くと自動で上書きされます。
+                </p>
+                <div class="flex gap-4" style="flex-wrap:wrap">
+                    <button class="btn btn-primary" onclick="App.exportBackup()"><i data-lucide="download"></i> データを書き出す</button>
+                    <button class="btn btn-secondary" onclick="App.triggerImport()"><i data-lucide="upload"></i> データを読み込む</button>
+                    <input type="file" id="importFile" accept=".json" style="display:none" onchange="App.importBackup(this)">
                 </div>
             </div>
-        `;
-        this.render(html);
+            <div class="card">
+                <h3><i data-lucide="cloud"></i> Google Drive 連携（手動）</h3>
+                <p style="color:var(--txt2);margin:1rem 0">
+                    上記でバックアップしたファイルをGoogle Drive経由で別端末と共有できます。<br>
+                    PC版Google Driveデスクトップアプリを使う場合：同期フォルダにバックアップファイルを保存するだけでOKです。
+                </p>
+                <a href="https://drive.google.com/" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="text-decoration:none"><i data-lucide="external-link"></i> Google Drive を開く</a>
+            </div>
+        </div>`);
+    },
+
+    // Due List
+    async renderDueList() {
+        const [dueCards, decks] = await Promise.all([Logic.getDueCards(), db.getAll('decks')]);
+        const dm = {}; decks.forEach(d => dm[d.id] = d.name);
+        const rows = dueCards.map(c => `
+        <div class="card flex justify-between items-center">
+            <div style="flex:1">
+                <span style="font-size:.8rem;color:var(--txt2)">${dm[c.deckId] || '?'}</span>
+                <div style="font-weight:bold;margin-top:.25rem">${c.frontText || '(画像カード)'}</div>
+                <small style="color:var(--txt2)">次回: ${c.nextReviewAt ? new Date(c.nextReviewAt).toLocaleDateString() : '新規'}</small>
+            </div>
+        </div>`).join('');
+
+        this.render(`
+        <div class="container animate-fade-in">
+            <header class="flex justify-between items-center" style="margin-bottom:2rem">
+                <button class="btn btn-secondary" onclick="App.navigateTo('dashboard')"><i data-lucide="arrow-left"></i> 戻る</button>
+                <h1>今日の復習一覧 (${dueCards.length})</h1>
+                <div style="width:40px"></div>
+            </header>
+            <div style="margin-bottom:2rem;text-align:center"><button class="btn btn-primary" style="padding:1rem 3rem" onclick="App.startSession()"><i data-lucide="play"></i> 学習を開始する</button></div>
+            <div class="flex flex-col gap-4">${rows || '<p style="text-align:center">復習が必要なカードはありません。</p>'}</div>
+        </div>`);
     },
 
     // Forms
     renderDeckForm(deck = null) {
-        const html = `
-            <div class="container animate-fade-in" style="max-width: 600px;">
-                <h2>${deck ? '単語帳を編集' : '新しい単語帳を作成'}</h2>
-                <form onsubmit="event.preventDefault(); App.saveDeck(this, ${deck ? deck.id : null})">
-                    <div style="margin: 1rem 0;">
-                        <label>単語帳の名前</label>
-                        <input type="text" name="name" value="${deck ? deck.name : ''}" required style="width: 100%;">
-                    </div>
-                     <div class="flex gap-2">
-                        <button type="button" class="btn btn-secondary" onclick="App.navigateTo('deckList')">キャンセル</button>
-                        <button type="submit" class="btn btn-primary">保存</button>
-                    </div>
-                </form>
-            </div>
-        `;
-        this.render(html);
+        this.render(`
+        <div class="container animate-fade-in" style="max-width:600px">
+            <h2>${deck ? '単語帳を編集' : '新しい単語帳を作成'}</h2>
+            <form onsubmit="event.preventDefault();App.saveDeck(this,${deck ? deck.id : null})">
+                <div style="margin:1rem 0"><label>単語帳の名前</label><input type="text" name="name" value="${deck ? deck.name : ''}" required style="width:100%"></div>
+                <div class="flex gap-2">
+                    <button type="button" class="btn btn-secondary" onclick="App.navigateTo('deckList')">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>`);
     },
 
+    // ⑥ Remove capture attr → allow both camera AND photo library on iPhone
     renderCardForm(deckId, card = null) {
-        // Updated to use file inputs with camera capture support
-        const html = `
-            <div class="container animate-fade-in" style="max-width: 600px;">
-                <h2>${card ? 'カードを編集' : '新しいカードを作成'}</h2>
-                <form onsubmit="event.preventDefault(); App.saveCard(this, ${deckId}, ${card ? card.id : null})">
-                    <!-- Front -->
-                    <div class="card" style="margin-bottom: 1rem;">
-                        <h3>表面（問題）</h3>
-                        <div style="margin: 1rem 0;">
-                            <label>テキスト</label>
-                            <textarea name="frontText" style="width: 100%; height: 80px;">${card ? card.frontText || '' : ''}</textarea>
-                        </div>
-                        <div style="margin: 1rem 0;">
-                            <label>画像を追加/変更 (カメラ/ファイル)</label>
-                            <input type="file" id="frontImageInput" accept="image/*" capture="environment" onchange="App.handleImageUpload(this, 'frontImagePreview')">
-                            <input type="hidden" name="frontImage" id="frontImageParams" value="${card ? card.frontImage || '' : ''}">
-                            <div id="frontImagePreview" style="margin-top: 0.5rem;">
-                                ${card && card.frontImage ? `<img src="${card.frontImage}" style="max-height: 150px; border-radius: 8px;">` : ''}
-                            </div>
-                        </div>
+        this.render(`
+        <div class="container animate-fade-in" style="max-width:600px">
+            <h2>${card ? 'カードを編集' : '新しいカードを作成'}</h2>
+            <form onsubmit="event.preventDefault();App.saveCard(this,${deckId},${card ? card.id : null})">
+                <div class="card" style="margin-bottom:1rem">
+                    <h3>表面（問題）</h3>
+                    <div style="margin:1rem 0"><label>テキスト</label><textarea name="frontText" style="width:100%;height:80px">${card ? card.frontText || '' : ''}</textarea></div>
+                    <div style="margin:1rem 0">
+                        <label>画像（カメラ撮影 または 写真選択）</label>
+                        <input type="file" accept="image/*" onchange="App.handleImageUpload(this,'frontImagePreview')">
+                        <input type="hidden" name="frontImage" id="frontImageParams" value="${card ? card.frontImage || '' : ''}">
+                        <div id="frontImagePreview" style="margin-top:.5rem">${card && card.frontImage ? `<img src="${card.frontImage}" style="max-height:150px;border-radius:8px">` : ''}</div>
                     </div>
-
-                    <!-- Back -->
-                    <div class="card" style="margin-bottom: 1rem;">
-                        <h3>裏面（解答）</h3>
-                        <div style="margin: 1rem 0;">
-                            <label>テキスト</label>
-                            <textarea name="backText" style="width: 100%; height: 80px;">${card ? card.backText || '' : ''}</textarea>
-                        </div>
-                        <div style="margin: 1rem 0;">
-                            <label>画像を追加/変更 (カメラ/ファイル)</label>
-                            <input type="file" id="backImageInput" accept="image/*" capture="environment" onchange="App.handleImageUpload(this, 'backImagePreview')">
-                            <input type="hidden" name="backImage" id="backImageParams" value="${card ? card.backImage || '' : ''}">
-                            <div id="backImagePreview" style="margin-top: 0.5rem;">
-                                ${card && card.backImage ? `<img src="${card.backImage}" style="max-height: 150px; border-radius: 8px;">` : ''}
-                            </div>
-                        </div>
+                </div>
+                <div class="card" style="margin-bottom:1rem">
+                    <h3>裏面（解答）</h3>
+                    <div style="margin:1rem 0"><label>テキスト</label><textarea name="backText" style="width:100%;height:80px">${card ? card.backText || '' : ''}</textarea></div>
+                    <div style="margin:1rem 0">
+                        <label>画像（カメラ撮影 または 写真選択）</label>
+                        <input type="file" accept="image/*" onchange="App.handleImageUpload(this,'backImagePreview')">
+                        <input type="hidden" name="backImage" id="backImageParams" value="${card ? card.backImage || '' : ''}">
+                        <div id="backImagePreview" style="margin-top:.5rem">${card && card.backImage ? `<img src="${card.backImage}" style="max-height:150px;border-radius:8px">` : ''}</div>
                     </div>
-
-                     <div class="flex gap-2">
-                        <button type="button" class="btn btn-secondary" onclick="App.manageCards(${deckId})">キャンセル</button>
-                        <button type="submit" class="btn btn-primary">保存</button>
-                    </div>
-                </form>
-            </div>
-        `;
-        this.render(html);
+                </div>
+                <div class="flex gap-2">
+                    <button type="button" class="btn btn-secondary" onclick="${state.returnToStudy ? 'App.returnToStudy()' : `App.manageCards(${deckId})`}">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>`);
     }
 };
 
 // --- App Controller ---
-
 const App = {
     async init() {
-        try {
-            await db.init();
-            this.navigateTo('dashboard');
-        } catch (e) {
-            console.error("Simple Error", e);
-            document.body.innerHTML = `<h1>起動エラー</h1><p>${e}</p>`;
-        }
+        try { await db.init(); this.navigateTo('dashboard'); }
+        catch (e) { document.body.innerHTML = `<h1>起動エラー</h1><p>${e}</p>`; }
     },
 
-    navigateTo(view, params = {}) {
+    navigateTo(view) {
         state.currentView = view;
+        if (view !== 'cardForm') state.returnToStudy = false;
         if (view === 'dashboard') UI.renderDashboard();
-        if (view === 'deckList') UI.renderDeckList();
-        if (view === 'settings') UI.renderSettings();
+        else if (view === 'deckList') UI.renderDeckList();
+        else if (view === 'settings') UI.renderSettings();
+        else if (view === 'dueList') UI.renderDueList();
     },
 
-    // Backup & Restore
-    async exportBackup() {
-        try {
-            const decks = await db.getAll('decks');
-            const cards = await db.getAll('cards');
-            const logs = await db.getAll('logs');
+    // Sort (②)
+    setSortOrder(order, deckId) { state.cardSortOrder = order; UI.renderCardManager(deckId); },
 
-            const backup = {
-                version: 1,
-                exportedAt: new Date().toISOString(),
-                data: { decks, cards, logs }
-            };
+    // Deck filter (③)
+    setDeckFilter(val) { state.studyDeckFilter = val || null; },
 
-            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `deep-galaxy_backup_${new Date().toISOString().slice(0, 10)}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-
-            alert("バックアップファイルを保存しました。\n\n【Google Drive連携（共有）の方法】\n1. このファイルを Google Drive にアップロードしてください\n2. 別の端末で Google Drive からこのファイルをダウンロードしてください\n3. アプリの「読み込む」ボタンからそのファイルを選択してください");
-        } catch (e) {
-            console.error(e);
-            alert("エクスポートに失敗しました: " + e);
-        }
-    },
-
-    async triggerImport() {
-        document.getElementById('importFile').click();
-    },
-
-    async importBackup(input) {
-        const file = input.files[0];
-        if (!file) return;
-
-        if (!confirm("警告：現在のデータをすべて消去し、バックアップファイルの内容で上書きしますか？\n\n※この操作は取り消せません。")) {
-            input.value = '';
-            return;
-        }
-
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const backup = JSON.parse(e.target.result);
-                if (!backup.data || !backup.data.decks) {
-                    throw new Error("無効なバックアップファイルです。");
-                }
-
-                // Transaction for atomic update
-                const tx = db.instance.transaction(['decks', 'cards', 'logs'], 'readwrite');
-
-                // Clear existing data
-                await tx.objectStore('decks').clear();
-                await tx.objectStore('cards').clear();
-                await tx.objectStore('logs').clear();
-
-                // Restore new data
-                for (const d of backup.data.decks) await tx.objectStore('decks').put(d);
-                for (const c of backup.data.cards) await tx.objectStore('cards').put(c);
-                for (const l of backup.data.logs) await tx.objectStore('logs').put(l);
-
-                tx.oncomplete = () => {
-                    alert("復元が完了しました！");
-                    window.location.reload(); // Reload to refresh state
-                };
-
-                tx.onerror = (err) => {
-                    throw new Error(err.target.error);
-                };
-            } catch (err) {
-                alert("インポートエラー: " + err.message);
-                console.error(err);
-            }
-        };
-        reader.readAsText(file);
-    },
-
-    // Helper: Image Upload to Base64
+    // Image upload (⑥ no capture attr → system picker on iPhone)
     handleImageUpload(input, previewId) {
-        const file = input.files[0];
-        if (!file) return;
-
+        const file = input.files[0]; if (!file) return;
         const reader = new FileReader();
         reader.onloadend = () => {
-            const base64 = reader.result;
-            // Update hidden input
-            if (previewId === 'frontImagePreview') {
-                document.getElementById('frontImageParams').value = base64;
-            } else {
-                document.getElementById('backImageParams').value = base64;
-            }
-            // Update preview
-            document.getElementById(previewId).innerHTML = `<img src="${base64}" style="max-height: 150px; border-radius: 8px;">`;
+            const b64 = reader.result;
+            document.getElementById(previewId === 'frontImagePreview' ? 'frontImageParams' : 'backImageParams').value = b64;
+            document.getElementById(previewId).innerHTML = `<img src="${b64}" style="max-height:150px;border-radius:8px">`;
         };
         reader.readAsDataURL(file);
     },
 
-    // Deck Actions
-    async createDeck() {
-        UI.renderDeckForm();
+    // Backup (fixed filename)
+    async exportBackup() {
+        try {
+            const [decks, cards, logs] = await Promise.all([db.getAll('decks'), db.getAll('cards'), db.getAll('logs')]);
+            const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), data: { decks, cards, logs } })], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = 'deepgalaxy_backup.json';
+            document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+            alert("deepgalaxy_backup.json として保存しました。\n\n毎回同じファイル名で保存されます。\nGoogle Driveの同期フォルダに置くと自動的に上書きされます。");
+        } catch (e) { alert("エクスポート失敗: " + e); }
     },
-    async editDeck(id) {
-        const deck = await db.get('decks', id);
-        UI.renderDeckForm(deck);
-    },
-    async saveDeck(form, id) {
-        const name = form.name.value;
-        const deck = {
-            name,
-            updatedAt: new Date().toISOString()
+    triggerImport() { document.getElementById('importFile').click(); },
+    async importBackup(input) {
+        const file = input.files[0]; if (!file) return;
+        if (!confirm("現在のデータをすべて消去し、バックアップファイルの内容で上書きしますか？\n\nこの操作は取り消せません。")) { input.value = ''; return; }
+        const reader = new FileReader();
+        reader.onload = async e => {
+            try {
+                const bk = JSON.parse(e.target.result);
+                if (!bk.data || !bk.data.decks) throw new Error("無効なファイルです");
+                const tx = db.instance.transaction(['decks', 'cards', 'logs'], 'readwrite');
+                await tx.objectStore('decks').clear(); await tx.objectStore('cards').clear(); await tx.objectStore('logs').clear();
+                for (const d of bk.data.decks) await tx.objectStore('decks').put(d);
+                for (const c of bk.data.cards) await tx.objectStore('cards').put(c);
+                for (const l of bk.data.logs) await tx.objectStore('logs').put(l);
+                tx.oncomplete = () => { alert("復元完了！"); location.reload(); };
+            } catch (err) { alert("インポートエラー: " + err.message); }
         };
-        if (id) {
-            deck.id = id;
-            deck.createdAt = (await db.get('decks', id)).createdAt;
-            await db.put('decks', deck);
-        } else {
-            deck.createdAt = new Date().toISOString();
-            await db.add('decks', deck);
-        }
+        reader.readAsText(file);
+    },
+
+    // Deck CRUD
+    createDeck() { UI.renderDeckForm(); },
+    async editDeck(id) { UI.renderDeckForm(await db.get('decks', id)); },
+    async saveDeck(form, id) {
+        const deck = { name: form.name.value, updatedAt: new Date().toISOString() };
+        if (id) { deck.id = id; deck.createdAt = (await db.get('decks', id)).createdAt; await db.put('decks', deck); }
+        else { deck.createdAt = new Date().toISOString(); await db.add('decks', deck); }
         this.navigateTo('deckList');
     },
     async deleteDeck(id) {
-        if (confirm("この単語帳とすべてのカードを削除しますか？")) {
-            await db.delete('decks', id);
-            const cards = await db.getCardsByDeck(id);
-            for (let c of cards) await db.delete('cards', c.id);
-            this.navigateTo('deckList');
-        }
+        if (!confirm("この単語帳とすべてのカードを削除しますか？")) return;
+        await db.del('decks', id);
+        const cards = await db.getCardsByDeck(id);
+        for (const c of cards) await db.del('cards', c.id);
+        this.navigateTo('deckList');
     },
 
-    // Card Actions
-    manageCards(deckId) {
-        UI.renderCardManager(deckId);
-    },
-    async createCard(deckId) {
-        UI.renderCardForm(deckId);
-    },
-    async editCard(id, deckId) {
-        const card = await db.get('cards', id);
-        UI.renderCardForm(deckId, card);
-    },
-    async deleteCard(id, deckId) {
-        if (confirm("このカードを削除しますか？")) {
-            await db.delete('cards', id);
-            this.manageCards(deckId);
-        }
-    },
+    // Card CRUD
+    manageCards(deckId) { UI.renderCardManager(deckId); },
+    createCard(deckId) { UI.renderCardForm(deckId); },
+    async editCard(id, deckId) { state.returnToStudy = false; UI.renderCardForm(deckId, await db.get('cards', id)); },
+    async deleteCard(id, deckId) { if (confirm("このカードを削除しますか？")) { await db.del('cards', id); this.manageCards(deckId); } },
+
+    // ① Duplicate check + save
     async saveCard(form, deckId, id) {
-        const cardData = {
-            deckId,
-            frontText: form.frontText.value,
-            frontImage: form.frontImage.value,
-            backText: form.backText.value,
-            backImage: form.backImage.value,
-            updatedAt: new Date().toISOString()
-        };
+        const frontText = form.frontText.value.trim();
+        const backText = form.backText.value.trim();
+        const frontImage = form.frontImage.value;
+        const backImage = form.backImage.value;
 
+        // Duplicate check on new cards only
+        if (!id && (frontText || backText)) {
+            const existing = await db.getCardsByDeck(deckId);
+            const dupFront = frontText && existing.some(c => c.frontText && c.frontText.trim() === frontText);
+            const dupBack = backText && existing.some(c => c.backText && c.backText.trim() === backText);
+            if (dupFront && dupBack) {
+                if (!confirm("同じ表面・裏面のカードがすでに存在します。\n本当に作成しますか？")) return;
+            } else if (dupFront) {
+                if (!confirm("同じ表面（問題）のカードがすでに存在します。\n本当に作成しますか？")) return;
+            } else if (dupBack) {
+                if (!confirm("同じ裏面（解答）のカードがすでに存在します。\n本当に作成しますか？")) return;
+            }
+        }
+
+        const cardData = { deckId, frontText, frontImage, backText, backImage, updatedAt: new Date().toISOString() };
         if (id) {
-            const existing = await db.get('cards', id);
-            Object.assign(existing, cardData);
-            await db.put('cards', existing);
+            const ex = await db.get('cards', id);
+            Object.assign(ex, cardData);
+            await db.put('cards', ex);
+            if (state.returnToStudy && state.studyQueue[state.currentCardIndex]?.id === id)
+                Object.assign(state.studyQueue[state.currentCardIndex], ex);
         } else {
-            Object.assign(cardData, {
-                n: 0,
-                I: 0,
-                EF: 2.5,
-                nextReviewAt: null,
-                totalSuccesses: 0,
-                createdAt: new Date().toISOString()
-            });
+            Object.assign(cardData, { n: 0, I: 0, EF: 2.5, nextReviewAt: null, totalSuccesses: 0, createdAt: new Date().toISOString() });
             await db.add('cards', cardData);
         }
-        this.manageCards(deckId);
+        if (state.returnToStudy) { state.returnToStudy = false; this.renderCurrentStudyCard(); }
+        else this.manageCards(deckId);
     },
 
-    // Session Logic
+    // Study
+    showDueList() { this.navigateTo('dueList'); },
+    async editCardFromStudy(id, deckId) { state.returnToStudy = true; UI.renderCardForm(deckId, await db.get('cards', id)); },
+    returnToStudy() { state.returnToStudy = false; this.renderCurrentStudyCard(); },
+    async deleteCardFromStudy(id) {
+        if (!confirm("このカードを削除しますか？\n（次のカードへ進みます）")) return;
+        await db.del('cards', id);
+        state.studyQueue.splice(state.currentCardIndex, 1);
+        if (!state.studyQueue.length || state.currentCardIndex >= state.studyQueue.length) { UI.renderEmptySession(); return; }
+        state.isShowingAnswer = false; this.renderCurrentStudyCard();
+    },
+
+    // ③ Start session with deck filter
     async startSession() {
-        const cards = await Logic.getDueCards();
-        if (cards.length === 0) {
-            alert("今日復習すべきカードはありません！");
-            return;
+        let cards = await Logic.getDueCards();
+        if (!cards.length) { alert("今日復習すべきカードはありません！"); return; }
+        // If deck filter is set, push those cards to front
+        if (state.studyDeckFilter) {
+            const filterId = Number(state.studyDeckFilter);
+            const priority = cards.filter(c => c.deckId === filterId);
+            const rest = cards.filter(c => c.deckId !== filterId);
+            cards = [...priority, ...rest];
         }
-        state.studyQueue = cards;
-        state.currentCardIndex = 0;
-        state.isShowingAnswer = false;
+        state.studyQueue = cards; state.currentCardIndex = 0; state.isShowingAnswer = false;
         this.renderCurrentStudyCard();
     },
 
     renderCurrentStudyCard() {
-        if (state.currentCardIndex >= state.studyQueue.length) {
-            UI.renderEmptySession();
-            return;
-        }
-        const card = state.studyQueue[state.currentCardIndex];
-        UI.renderStudyCard(card, state.studyQueue.length, state.currentCardIndex);
+        if (state.currentCardIndex >= state.studyQueue.length) { UI.renderEmptySession(); return; }
+        UI.renderStudyCard(state.studyQueue[state.currentCardIndex], state.studyQueue.length, state.currentCardIndex);
     },
 
-    flipCard() {
-        if (!state.isShowingAnswer) {
-            state.isShowingAnswer = true;
-            this.renderCurrentStudyCard();
-        }
-    },
+    flipCard() { if (!state.isShowingAnswer) { state.isShowingAnswer = true; this.renderCurrentStudyCard(); } },
 
     async submitReview(uiGrade) {
-        // UI Grade: 1, 2, 3, 4
-        // Logic q: 1, 3, 4, 5
         const qMap = { 1: 1, 2: 3, 3: 4, 4: 5 };
         const q = qMap[uiGrade];
-
         const card = state.studyQueue[state.currentCardIndex];
-
-        const log = {
-            cardId: card.id,
-            reviewedAt: new Date().toISOString(),
-            q: q,
-            intervalBefore: card.I,
-            efBefore: card.EF
-        };
+        const log = { cardId: card.id, reviewedAt: new Date().toISOString(), q, intervalBefore: card.I, efBefore: card.EF };
 
         const userStats = await Logic.getUserStats();
-        let userEFMultiplier = 1.0;
-        if (userStats.forgetRate > 0.35) userEFMultiplier = 0.9;
-        else if (userStats.forgetRate < 0.15) userEFMultiplier = 1.1;
+        let eMult = 1.0;
+        if (userStats.forgetRate > 0.35) eMult = 0.9;
+        else if (userStats.forgetRate < 0.15) eMult = 1.1;
 
-        const cardStats = Logic.calculateCardStats(card, userStats.forgetRate);
-        let retentionMult = 1.0;
-        const rScore = cardStats.retentionScore;
-        if (rScore < 40) retentionMult = 0.8;
-        else if (rScore > 80) retentionMult = 1.2;
+        const cs = Logic.calculateCardStats(card, userStats.forgetRate);
+        let rMult = 1.0;
+        if (cs.retentionScore < 40) rMult = 0.8;
+        else if (cs.retentionScore > 80) rMult = 1.2;
 
-        const sm2Result = Logic.calculateSM2(card, q);
+        const sm2 = Logic.calculateSM2(card, q);
+        let efNew = Math.max(sm2.EF * eMult, 1.3);
+        let iNew;
+        if (sm2.n > 2 && q >= 3) iNew = Math.round(card.I * efNew * rMult);
+        else if (q < 3) iNew = 1;
+        else iNew = sm2.I;
 
-        let efNew = sm2Result.EF * userEFMultiplier;
-        if (efNew < 1.3) efNew = 1.3;
-
-        let iNew = sm2Result.I;
-
-        if (sm2Result.n > 2 && q >= 3) {
-            iNew = Math.round(card.I * efNew * retentionMult);
-        } else if (q < 3) {
-            iNew = 1;
-        } else {
-            iNew = sm2Result.I;
-        }
-
-        const now = new Date();
-        const nextDate = new Date();
-        nextDate.setDate(now.getDate() + iNew);
-
-        card.n = sm2Result.n;
-        card.I = iNew;
-        card.EF = efNew;
-        card.nextReviewAt = nextDate.toISOString();
-        card.lastReviewAt = now.toISOString();
-        if (q >= 3) {
-            card.totalSuccesses = (card.totalSuccesses || 0) + 1;
-        }
+        const now = new Date(), next = new Date(); next.setDate(now.getDate() + iNew);
+        card.n = sm2.n; card.I = iNew; card.EF = efNew;
+        card.nextReviewAt = next.toISOString(); card.lastReviewAt = now.toISOString();
+        if (q >= 3) card.totalSuccesses = (card.totalSuccesses || 0) + 1;
 
         await db.put('cards', card);
-
-        log.intervalAfter = iNew;
-        log.EF = efNew;
+        log.intervalAfter = iNew; log.EF = efNew;
         await db.add('logs', log);
 
-        state.currentCardIndex++;
-        state.isShowingAnswer = false;
+        state.currentCardIndex++; state.isShowingAnswer = false;
         this.renderCurrentStudyCard();
     }
 };

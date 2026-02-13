@@ -1,47 +1,38 @@
 :root {
-    --bg-color: #0f172a;
-    --surface-color: #1e293b;
-    --surface-hover: #334155;
-    --primary-color: #3b82f6;
-    /* Blue 500 */
-    --primary-hover: #2563eb;
-    --accent-color: #8b5cf6;
-    /* Violet 500 */
-    --text-primary: #f8fafc;
-    --text-secondary: #94a3b8;
-    --border-color: #334155;
-    --success-color: #10b981;
-    --warning-color: #f59e0b;
-    --danger-color: #ef4444;
-
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 16px;
-
-    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-
-    --font-heading: 'Outfit', sans-serif;
-    --font-body: 'Inter', sans-serif;
-
-    --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    --bg: #0f172a;
+    --sfc: #1e293b;
+    --sfc-h: #334155;
+    --pri: #3b82f6;
+    --pri-h: #2563eb;
+    --acc: #8b5cf6;
+    --txt: #f8fafc;
+    --txt2: #94a3b8;
+    --brd: #334155;
+    --ok: #10b981;
+    --warn: #f59e0b;
+    --err: #ef4444;
+    --r-s: 8px;
+    --r-m: 12px;
+    --r-l: 16px;
+    --sh-m: 0 4px 6px -1px rgb(0 0 0/.1), 0 2px 4px -2px rgb(0 0 0/.1);
+    --sh-l: 0 10px 15px -3px rgb(0 0 0/.1), 0 4px 6px -4px rgb(0 0 0/.1);
+    --tr: .2s cubic-bezier(.4, 0, .2, 1)
 }
 
 * {
     box-sizing: border-box;
     margin: 0;
-    padding: 0;
+    padding: 0
 }
 
 body {
-    background-color: var(--bg-color);
-    color: var(--text-primary);
-    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--txt);
+    font-family: 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     min-height: 100vh;
     display: flex;
-    flex-direction: column;
+    flex-direction: column
 }
 
 h1,
@@ -50,245 +41,336 @@ h3,
 h4,
 h5,
 h6 {
-    font-family: var(--font-heading);
-    color: var(--text-primary);
-    font-weight: 700;
+    font-family: 'Outfit', sans-serif;
+    color: var(--txt);
+    font-weight: 700
 }
 
 button {
     cursor: pointer;
-    font-family: var(--font-body);
+    font-family: inherit;
     border: none;
     outline: none;
-    background: none;
+    background: none
 }
 
 input,
 textarea,
 select {
-    font-family: var(--font-body);
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
-    padding: 0.75rem 1rem;
-    border-radius: var(--radius-sm);
-    transition: var(--transition-fast);
+    font-family: inherit;
+    background: var(--sfc);
+    border: 1px solid var(--brd);
+    color: var(--txt);
+    padding: .75rem 1rem;
+    border-radius: var(--r-s);
+    transition: var(--tr)
 }
 
 input:focus,
 textarea:focus,
 select:focus {
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+    border-color: var(--pri);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, .3)
 }
 
-/* Layout Utilities */
+a {
+    color: var(--pri);
+    text-decoration: none
+}
+
+/* Utilities */
 .container {
     max-width: 1200px;
     margin: 0 auto;
     padding: 2rem;
-    width: 100%;
+    width: 100%
 }
 
 .flex {
-    display: flex;
+    display: flex
 }
 
 .flex-col {
-    flex-direction: column;
+    flex-direction: column
 }
 
 .items-center {
-    align-items: center;
+    align-items: center
 }
 
 .justify-between {
-    justify-content: space-between;
+    justify-content: space-between
 }
 
 .justify-center {
-    justify-content: center;
+    justify-content: center
 }
 
 .gap-2 {
-    gap: 0.5rem;
+    gap: .5rem
 }
 
 .gap-4 {
-    gap: 1rem;
+    gap: 1rem
 }
 
-.gap-6 {
-    gap: 1.5rem;
-}
-
-/* Components */
+/* Card */
 .card {
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
+    background: var(--sfc);
+    border: 1px solid var(--brd);
+    border-radius: var(--r-m);
     padding: 1.5rem;
-    box-shadow: var(--shadow-md);
-    transition: var(--transition-fast);
+    box-shadow: var(--sh-m);
+    transition: var(--tr);
+    margin-bottom: .75rem
 }
 
-.card:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-lg);
-    border-color: var(--surface-hover);
-}
-
+/* Buttons */
 .btn {
-    padding: 0.75rem 1.5rem;
-    border-radius: var(--radius-sm);
+    padding: .75rem 1.5rem;
+    border-radius: var(--r-s);
     font-weight: 500;
-    transition: var(--transition-fast);
+    transition: var(--tr);
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: .5rem;
+    white-space: nowrap
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
-    color: white;
-}
-
-.btn-primary:hover {
-    opacity: 0.9;
-    transform: translateY(-1px);
+    background: linear-gradient(135deg, var(--pri), var(--acc));
+    color: #fff
 }
 
 .btn-secondary {
-    background: var(--surface-hover);
-    color: var(--text-primary);
-}
-
-.btn-secondary:hover {
-    background: var(--border-color);
+    background: var(--sfc-h);
+    color: var(--txt)
 }
 
 .btn-danger {
-    background: rgba(239, 68, 68, 0.2);
-    color: var(--danger-color);
+    background: rgba(239, 68, 68, .2);
+    color: var(--err)
 }
 
-.btn-danger:hover {
-    background: rgba(239, 68, 68, 0.3);
+/* Sort Toggle */
+.sort-toggle {
+    display: inline-flex;
+    border-radius: var(--r-s);
+    overflow: hidden;
+    border: 1px solid var(--brd)
 }
 
-/* Dashboard Specifics */
+.sort-toggle button {
+    padding: .5rem 1rem;
+    background: var(--sfc);
+    color: var(--txt2);
+    border: none;
+    font-size: .85rem;
+    transition: var(--tr)
+}
+
+.sort-toggle button.active {
+    background: var(--pri);
+    color: #fff
+}
+
+/* Stats Grid */
 .stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1.5rem;
-    margin-bottom: 2rem;
+    margin-bottom: 2rem
 }
 
 .stat-card {
-    background: rgba(30, 41, 59, 0.5);
+    background: rgba(30, 41, 59, .5);
     backdrop-filter: blur(8px);
     padding: 1.5rem;
-    border-radius: var(--radius-md);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--r-m);
+    border: 1px solid rgba(255, 255, 255, .1)
 }
 
 .stat-value {
     font-size: 2rem;
     font-weight: 700;
-    margin-top: 0.5rem;
-    background: linear-gradient(to right, var(--text-primary), var(--primary-color));
+    margin-top: .5rem;
+    background: linear-gradient(to right, var(--txt), var(--pri));
     -webkit-background-clip: text;
     background-clip: text;
-    -webkit-text-fill-color: transparent;
+    -webkit-text-fill-color: transparent
 }
 
-/* Study Interface */
+/* Study */
 .study-container {
-    max-width: 800px;
+    max-width: 1000px;
+    width: 95%;
     margin: 0 auto;
-    text-align: center;
+    text-align: center
 }
 
 .flashcard {
     min-height: 400px;
-    background: var(--surface-color);
-    border-radius: var(--radius-lg);
+    background: var(--sfc);
+    border-radius: var(--r-l);
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
     padding: 3rem;
     margin: 2rem 0;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--brd);
     cursor: pointer;
-    position: relative;
-    perspective: 1000px;
+    width: 100%;
+    overflow-y: auto
 }
 
 .flashcard-content {
     font-size: 1.5rem;
     line-height: 1.6;
+    width: 100%
+}
+
+/* Study image wrapper with zoom button */
+.study-img-wrap {
+    position: relative;
+    display: inline-block;
+    max-width: 90%;
+    margin: 1rem auto;
+    text-align: center
+}
+
+.study-img {
+    max-width: 100%;
+    max-height: 400px;
+    border-radius: var(--r-s);
+    display: block;
+    object-fit: contain
+}
+
+.img-zoom-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, .55);
+    color: #fff;
+    border: none;
+    font-size: 1.25rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    transition: background .2s;
+    z-index: 5;
+    backdrop-filter: blur(4px)
+}
+
+.img-zoom-btn:hover {
+    background: rgba(59, 130, 246, .7)
 }
 
 .flashcard img {
-    max-width: 100%;
-    max-height: 300px;
-    border-radius: var(--radius-sm);
-    margin: 1rem 0;
+    max-width: 90%;
+    max-height: 400px;
+    border-radius: var(--r-s);
+    margin: 1rem auto;
+    display: block;
+    object-fit: contain
 }
 
 .action-bar {
     display: flex;
     gap: 1rem;
     justify-content: center;
-    margin-top: 2rem;
+    margin-top: 2rem
 }
 
 .grade-btn {
     flex: 1;
     padding: 1rem;
-    border-radius: var(--radius-md);
+    border-radius: var(--r-m);
     font-weight: 600;
     color: #0f172a;
-    transition: transform 0.1s;
+    transition: transform .1s;
+    min-height: 48px
 }
 
 .grade-1 {
-    background: var(--danger-color);
+    background: var(--err)
 }
 
 .grade-2 {
-    background: var(--warning-color);
+    background: var(--warn)
 }
 
 .grade-3 {
-    background: var(--primary-color);
-    color: white;
+    background: var(--pri);
+    color: #fff
 }
 
 .grade-4 {
-    background: var(--success-color);
+    background: var(--ok)
 }
 
 .grade-btn:active {
-    transform: scale(0.95);
+    transform: scale(.95)
+}
+
+/* Image Modal */
+.img-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, .9);
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: zoom-out;
+    padding: 1rem
+}
+
+.img-modal-overlay img {
+    max-width: 95vw;
+    max-height: 90vh;
+    object-fit: contain;
+    border-radius: var(--r-m)
+}
+
+.img-modal-close {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 10000;
+    background: rgba(255, 255, 255, .15);
+    color: #fff;
+    border: none;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    font-size: 1.5rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer
 }
 
 /* Animations */
 @keyframes fadeIn {
     from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(10px)
     }
 
     to {
         opacity: 1;
-        transform: translateY(0);
+        transform: translateY(0)
     }
 }
 
 .animate-fade-in {
-    animation: fadeIn 0.4s ease-out forwards;
+    animation: fadeIn .4s ease-out forwards
 }
 
 .loading-screen {
@@ -297,38 +379,32 @@ select:focus {
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: 1rem;
+    gap: 1rem
 }
 
 .spinner {
     width: 40px;
     height: 40px;
-    border: 3px solid var(--surface-hover);
-    border-top-color: var(--primary-color);
+    border: 3px solid var(--sfc-h);
+    border-top-color: var(--pri);
     border-radius: 50%;
-    animation: spin 1s linear infinite;
+    animation: spin 1s linear infinite
 }
 
 @keyframes spin {
     to {
-        transform: rotate(360deg);
+        transform: rotate(360deg)
     }
 }
 
-/* Mobile Optimization (max-width: 768px) */
-@media (max-width: 768px) {
+/* Mobile */
+@media(max-width:768px) {
     :root {
-        --radius-lg: 24px;
-    }
-
-    html,
-    body {
-        font-size: 16px;
-        /* Base for rem, but we render text larger */
+        --r-l: 24px
     }
 
     body {
-        line-height: 1.6;
+        line-height: 1.6
     }
 
     p,
@@ -336,153 +412,134 @@ select:focus {
     input,
     textarea,
     .flashcard-content {
-        font-size: 18px !important;
+        font-size: 18px !important
     }
 
     h1 {
         font-size: 1.75rem;
-        margin-bottom: 0.5rem;
+        margin-bottom: .5rem
     }
 
     h2 {
-        font-size: 1.5rem;
+        font-size: 1.5rem
     }
 
     h3 {
-        font-size: 1.3rem;
+        font-size: 1.3rem
     }
 
     .container {
         padding: 1rem;
-        padding-bottom: 120px;
-        /* Space for fixed bottom elements */
-        max-width: 100%;
+        padding-bottom: 140px;
+        max-width: 100%
     }
 
-    /* Layout Reset */
     .flex {
-        flex-wrap: wrap;
+        flex-wrap: wrap
     }
 
-    /* Header modifications for mobile */
     header.flex {
         flex-direction: column;
         align-items: stretch;
-        /* Full width */
         gap: 1rem;
         text-align: center;
-        margin-bottom: 1.5rem !important;
+        margin-bottom: 1.5rem !important
     }
 
     header div.flex {
-        /* Button groups in header */
         flex-direction: row;
-        gap: 0.5rem;
+        gap: .5rem
     }
 
-    header div.flex button {
+    header div.flex button,
+    header div.flex a {
         flex: 1;
-        justify-content: center;
+        justify-content: center
     }
 
-    /* Stats Grid to Single Column */
     .stats-grid {
         grid-template-columns: 1fr;
-        gap: 1rem;
+        gap: 1rem
     }
 
-    /* Buttons optimized for touch */
     .btn {
         min-height: 48px;
-        /* Min 44px+ requirement */
         font-size: 1rem;
         display: flex;
         justify-content: center;
         align-items: center;
         width: 100%;
-        /* Full width usually easier on mobile */
-        margin-bottom: 0.5rem;
-        /* Spacing between stacked buttons */
+        margin-bottom: .5rem
     }
 
-    /* Exceptions for button groups that should stay inline */
     .flex.gap-2>.btn {
         width: auto;
         flex: 1;
-        margin-bottom: 0;
+        margin-bottom: 0
     }
 
-    /* Card Item List */
     .card {
-        padding: 1.25rem;
-        margin-bottom: 1rem;
+        padding: 1.25rem
     }
 
     .card .flex.justify-between {
         flex-direction: column;
-        gap: 1rem;
+        gap: 1rem
     }
 
     .card .flex.gap-2 {
-        /* Edit/Delete buttons row */
         flex-direction: row;
-        width: 100%;
+        width: 100%
     }
 
-    /* Inputs */
     input,
     textarea,
     select {
         font-size: 18px;
-        /* Prevent iOS zoom */
-        padding: 12px;
+        padding: 12px
     }
 
-    /* --- Study Screen Enhancements --- */
-
-    /* Make the study container take full height minus header */
     .study-container {
         display: flex;
         flex-direction: column;
         justify-content: flex-start;
-        /* items start from top */
-        height: auto;
+        height: auto
     }
 
     .flashcard {
-        min-height: 45vh;
-        margin: 1rem 0 2rem 0;
-        padding: 1.5rem;
-        /* Center content vertically */
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
+        min-height: 40vh;
+        margin: 1rem 0;
+        padding: 1.5rem
     }
 
-    /* Fixed Bottom Action Bar */
+    .flashcard img,
+    .study-img {
+        max-height: 300px;
+        max-width: 100%
+    }
+
+    .study-img-wrap {
+        max-width: 100%
+    }
+
     .action-bar {
         position: fixed;
         bottom: 0;
         left: 0;
         right: 0;
-        background: var(--surface-color);
-        /* Match theme */
-        border-top: 1px solid var(--border-color);
+        background: var(--sfc);
+        border-top: 1px solid var(--brd);
         padding: 1rem;
         padding-bottom: max(1rem, env(safe-area-inset-bottom));
-        /* iPhone X+ safe area */
         z-index: 1000;
-
         display: flex;
-        flex-direction: row;
-        /* Horizontal buttons */
         gap: 8px;
-        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, .5);
+        margin: 0
     }
 
     .grade-btn {
         height: 56px;
-        /* Big touch target */
         font-size: 1rem;
         padding: 0;
         display: flex;
@@ -490,16 +547,10 @@ select:focus {
         justify-content: center;
         align-items: center;
         line-height: 1.1;
-        border-radius: 8px;
+        border-radius: 8px
     }
 
-    .grade-btn small {
-        font-size: 0.75rem;
-        opacity: 0.9;
-    }
-
-    /* Disable hover transform */
     .card:hover {
-        transform: none;
+        transform: none
     }
 }
