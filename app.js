@@ -11,8 +11,9 @@ const state = {
     currentCardIndex: 0,
     isShowingAnswer: false,
     returnToStudy: false,
-    cardSortOrder: 'desc', // desc=new first, asc=old first
-    studyDeckFilter: null  // null=auto, deckId=priority deck
+    cardSortOrder: 'desc',
+    studyDeckFilter: null,
+    cardListScrollY: 0
 };
 
 // --- Database ---
@@ -152,20 +153,20 @@ const UI = {
         const t7 = now.getTime() - 7 * 864e5;
         const l7 = logs.filter(l => new Date(l.reviewedAt).getTime() > t7);
         const rate7d = l7.length ? Math.round(l7.filter(l => l.q >= 3).length / l7.length * 100) : 0;
-        const bad = cards.filter(c => c.EF < 1.5).length;
 
-        // Deck filter options
         const deckOpts = decks.map(d => `<option value="${d.id}" ${state.studyDeckFilter == d.id ? 'selected' : ''}>${d.name}</option>`).join('');
 
         this.render(`
         <div class="container animate-fade-in">
             <header class="flex justify-between items-center" style="margin-bottom:2rem">
                 <h1>DeepGalaxy</h1>
-                <div class="flex gap-2">
-                    <button class="btn btn-secondary" onclick="App.navigateTo('settings')"><i data-lucide="settings"></i> データ管理</button>
-                    <button class="btn btn-primary" onclick="App.navigateTo('deckList')"><i data-lucide="layers"></i> 単語帳管理</button>
-                </div>
+                <button class="btn btn-secondary" onclick="App.navigateTo('settings')" style="min-height:48px"><i data-lucide="settings"></i> データ管理</button>
             </header>
+            <div style="margin-bottom:2rem">
+                <button class="btn btn-primary" onclick="App.navigateTo('deckList')" style="width:100%;font-size:1.2rem;padding:1.25rem 2rem;min-height:56px">
+                    <i data-lucide="layers"></i> 単語帳管理
+                </button>
+            </div>
             <div class="stats-grid">
                 <div class="stat-card">
                     <h3>今日の復習</h3>
@@ -173,7 +174,6 @@ const UI = {
                     <button class="btn btn-secondary" style="margin-top:.5rem;font-size:.9rem" onclick="App.showDueList()"><i data-lucide="list"></i> 一覧を見る</button>
                 </div>
                 <div class="stat-card"><h3>定着率 (7日)</h3><div class="stat-value">${rate7d}%</div><small>忘却率: ${(stats.forgetRate * 100).toFixed(1)}%</small></div>
-                <div class="stat-card"><h3>苦手カード</h3><div class="stat-value" style="color:var(--warn);-webkit-text-fill-color:initial">${bad}</div></div>
             </div>
             <div class="card" style="text-align:center;padding:3rem 2rem">
                 <h2>学習を始めましょう</h2>
@@ -222,13 +222,13 @@ const UI = {
         </div>`);
     },
 
-    // Card Manager (② sort + ⑦ count)
+    // Card Manager (sort + count + scroll restore)
     async renderCardManager(deckId) {
+        state.activeDeckId = deckId;
         const deck = await db.get('decks', deckId);
         let cards = await db.getCardsByDeck(deckId);
         const total = cards.length;
 
-        // Sort
         cards.sort((a, b) => {
             const ta = new Date(a.createdAt || 0).getTime();
             const tb = new Date(b.createdAt || 0).getTime();
@@ -250,7 +250,7 @@ const UI = {
         </div>`).join('');
 
         this.render(`
-        <div class="container animate-fade-in">
+        <div class="container animate-fade-in" id="cardListContainer">
             <header class="flex justify-between items-center" style="margin-bottom:2rem">
                 <button class="btn btn-secondary" onclick="App.navigateTo('deckList')"><i data-lucide="arrow-left"></i> 戻る</button>
                 <h1>${deck.name}（${total}枚）</h1>
@@ -265,19 +265,29 @@ const UI = {
             </div>
             <div class="flex flex-col gap-4">${rows || '<p style="text-align:center;color:var(--txt2)">カードがありません。</p>'}</div>
         </div>`);
+
+        // Restore scroll position
+        if (state.cardListScrollY > 0) {
+            requestAnimationFrame(() => window.scrollTo(0, state.cardListScrollY));
+            state.cardListScrollY = 0;
+        }
     },
 
-    // Study Card (④ improved images, ⑤ fixed bottom bar)
+    // Study Card (text→image order, per-card imgSize)
     renderStudyCard(card, total, current) {
+        const sz = card.imgSize || 'medium';
+        const szMap = { small: '200px', medium: '400px', large: '600px' };
+        const maxH = szMap[sz] || '400px';
         const mkImg = (src, alt) => {
             if (!src) return '';
             return `<div class="study-img-wrap">
-                <img src="${src}" alt="${alt}" class="study-img">
+                <img src="${src}" alt="${alt}" class="study-img" style="max-height:${maxH}">
                 <button class="img-zoom-btn" onclick="event.stopPropagation();openImageModal('${src}')" title="拡大表示">🔍</button>
             </div>`;
         };
-        const front = mkImg(card.frontImage, '表') + (card.frontText ? `<p>${card.frontText}</p>` : '');
-        const back = mkImg(card.backImage, '裏') + (card.backText ? `<p>${card.backText}</p>` : '');
+        // Text first, then image
+        const front = (card.frontText ? `<p>${card.frontText}</p>` : '') + mkImg(card.frontImage, '表');
+        const back = (card.backText ? `<p>${card.backText}</p>` : '') + mkImg(card.backImage, '裏');
 
         this.render(`
         <div class="container animate-fade-in" style="min-height:100vh;display:flex;flex-direction:column">
@@ -395,8 +405,26 @@ const UI = {
         </div>`);
     },
 
-    // ⑥ Remove capture attr → allow both camera AND photo library on iPhone
+    // Card Form (image delete, imgSize slider)
     renderCardForm(deckId, card = null) {
+        const curSize = card?.imgSize || 'medium';
+        const szLabels = { small: '小', medium: '中', large: '大' };
+        const szIdx = { small: 0, medium: 1, large: 2 };
+
+        const mkImgSection = (side, label, hiddenId, previewId, imgVal) => {
+            const hasImg = !!(imgVal);
+            return `
+                <div style="margin:1rem 0">
+                    <label>画像（カメラ撮影 または 写真選択）</label>
+                    <input type="file" accept="image/*" onchange="App.handleImageUpload(this,'${previewId}')">
+                    <input type="hidden" name="${side}Image" id="${hiddenId}" value="${imgVal || ''}">
+                    <div id="${previewId}" style="margin-top:.5rem">${hasImg ? `<img src="${imgVal}" style="max-height:150px;border-radius:8px">` : ''}</div>
+                    ${hasImg ? `<button type="button" class="btn btn-danger" style="margin-top:.5rem;font-size:.85rem" onclick="App.removeImage('${side}','${hiddenId}','${previewId}')">
+                        <i data-lucide="x"></i> 画像を削除
+                    </button>` : ''}
+                </div>`;
+        };
+
         this.render(`
         <div class="container animate-fade-in" style="max-width:600px">
             <h2>${card ? 'カードを編集' : '新しいカードを作成'}</h2>
@@ -404,21 +432,20 @@ const UI = {
                 <div class="card" style="margin-bottom:1rem">
                     <h3>表面（問題）</h3>
                     <div style="margin:1rem 0"><label>テキスト</label><textarea name="frontText" style="width:100%;height:80px">${card ? card.frontText || '' : ''}</textarea></div>
-                    <div style="margin:1rem 0">
-                        <label>画像（カメラ撮影 または 写真選択）</label>
-                        <input type="file" accept="image/*" onchange="App.handleImageUpload(this,'frontImagePreview')">
-                        <input type="hidden" name="frontImage" id="frontImageParams" value="${card ? card.frontImage || '' : ''}">
-                        <div id="frontImagePreview" style="margin-top:.5rem">${card && card.frontImage ? `<img src="${card.frontImage}" style="max-height:150px;border-radius:8px">` : ''}</div>
-                    </div>
+                    ${mkImgSection('front', '表面', 'frontImageParams', 'frontImagePreview', card?.frontImage)}
                 </div>
                 <div class="card" style="margin-bottom:1rem">
                     <h3>裏面（解答）</h3>
                     <div style="margin:1rem 0"><label>テキスト</label><textarea name="backText" style="width:100%;height:80px">${card ? card.backText || '' : ''}</textarea></div>
-                    <div style="margin:1rem 0">
-                        <label>画像（カメラ撮影 または 写真選択）</label>
-                        <input type="file" accept="image/*" onchange="App.handleImageUpload(this,'backImagePreview')">
-                        <input type="hidden" name="backImage" id="backImageParams" value="${card ? card.backImage || '' : ''}">
-                        <div id="backImagePreview" style="margin-top:.5rem">${card && card.backImage ? `<img src="${card.backImage}" style="max-height:150px;border-radius:8px">` : ''}</div>
+                    ${mkImgSection('back', '裏面', 'backImageParams', 'backImagePreview', card?.backImage)}
+                </div>
+                <div class="card" style="margin-bottom:1rem">
+                    <h3>画像サイズ</h3>
+                    <p style="color:var(--txt2);font-size:.85rem;margin:.5rem 0">学習画面での画像の表示サイズを選択してください。</p>
+                    <input type="hidden" name="imgSize" id="imgSizeVal" value="${curSize}">
+                    <div style="display:flex;align-items:center;gap:1rem;margin-top:.5rem">
+                        <input type="range" id="imgSizeRange" min="0" max="2" step="1" value="${szIdx[curSize]}" style="flex:1;min-height:44px;accent-color:var(--pri)" oninput="App.updateImgSizeLabel(this.value)">
+                        <span id="imgSizeLabel" style="min-width:2em;font-weight:600;font-size:1.1rem">${szLabels[curSize]}</span>
                     </div>
                 </div>
                 <div class="flex gap-2">
@@ -446,22 +473,49 @@ const App = {
         else if (view === 'dueList') UI.renderDueList();
     },
 
-    // Sort (②)
     setSortOrder(order, deckId) { state.cardSortOrder = order; UI.renderCardManager(deckId); },
-
-    // Deck filter (③)
     setDeckFilter(val) { state.studyDeckFilter = val || null; },
 
-    // Image upload (⑥ no capture attr → system picker on iPhone)
+    // Image upload
     handleImageUpload(input, previewId) {
         const file = input.files[0]; if (!file) return;
         const reader = new FileReader();
         reader.onloadend = () => {
             const b64 = reader.result;
-            document.getElementById(previewId === 'frontImagePreview' ? 'frontImageParams' : 'backImageParams').value = b64;
+            const hiddenId = previewId === 'frontImagePreview' ? 'frontImageParams' : 'backImageParams';
+            document.getElementById(hiddenId).value = b64;
             document.getElementById(previewId).innerHTML = `<img src="${b64}" style="max-height:150px;border-radius:8px">`;
+            // Show delete button
+            const delBtn = document.querySelector(`[onclick*="${previewId}"].btn-danger`);
+            if (!delBtn) {
+                const side = previewId === 'frontImagePreview' ? 'front' : 'back';
+                const btn = document.createElement('button');
+                btn.type = 'button'; btn.className = 'btn btn-danger'; btn.style.cssText = 'margin-top:.5rem;font-size:.85rem';
+                btn.onclick = () => App.removeImage(side, hiddenId, previewId);
+                btn.innerHTML = '<i data-lucide="x"></i> 画像を削除';
+                document.getElementById(previewId).parentElement.appendChild(btn);
+                lucide.createIcons();
+            }
         };
         reader.readAsDataURL(file);
+    },
+
+    // Image removal
+    removeImage(side, hiddenId, previewId) {
+        if (!confirm('この画像を削除しますか？')) return;
+        document.getElementById(hiddenId).value = '';
+        document.getElementById(previewId).innerHTML = '';
+        // Remove delete button
+        const btns = document.getElementById(previewId).parentElement.querySelectorAll('.btn-danger');
+        btns.forEach(b => b.remove());
+    },
+
+    // Image size slider label
+    updateImgSizeLabel(val) {
+        const sizes = ['small', 'medium', 'large'];
+        const labels = ['小', '中', '大'];
+        document.getElementById('imgSizeVal').value = sizes[val];
+        document.getElementById('imgSizeLabel').textContent = labels[val];
     },
 
     // Backup (fixed filename)
@@ -512,10 +566,10 @@ const App = {
         this.navigateTo('deckList');
     },
 
-    // Card CRUD
+    // Card CRUD (save scroll position before leaving list)
     manageCards(deckId) { UI.renderCardManager(deckId); },
-    createCard(deckId) { UI.renderCardForm(deckId); },
-    async editCard(id, deckId) { state.returnToStudy = false; UI.renderCardForm(deckId, await db.get('cards', id)); },
+    createCard(deckId) { state.cardListScrollY = window.scrollY; UI.renderCardForm(deckId); },
+    async editCard(id, deckId) { state.cardListScrollY = window.scrollY; state.returnToStudy = false; UI.renderCardForm(deckId, await db.get('cards', id)); },
     async deleteCard(id, deckId) { if (confirm("このカードを削除しますか？")) { await db.del('cards', id); this.manageCards(deckId); } },
 
     // ① Duplicate check + save
@@ -539,7 +593,8 @@ const App = {
             }
         }
 
-        const cardData = { deckId, frontText, frontImage, backText, backImage, updatedAt: new Date().toISOString() };
+        const imgSize = form.imgSize ? form.imgSize.value : 'medium';
+        const cardData = { deckId, frontText, frontImage, backText, backImage, imgSize, updatedAt: new Date().toISOString() };
         if (id) {
             const ex = await db.get('cards', id);
             Object.assign(ex, cardData);
