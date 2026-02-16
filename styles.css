@@ -356,6 +356,82 @@ a {
     cursor: pointer
 }
 
+/* Search */
+.card-search-input {
+    width: 100%;
+    padding: .75rem 1rem .75rem 2.75rem;
+    background: var(--sfc);
+    border: 1px solid var(--brd);
+    border-radius: var(--r-m);
+    color: var(--txt);
+    font-size: 1rem;
+    transition: var(--tr);
+    min-height: 48px
+}
+
+.card-search-input:focus {
+    border-color: var(--pri);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, .3)
+}
+
+.card-search-wrap {
+    position: relative;
+    margin-bottom: 1rem
+}
+
+.card-search-wrap .search-icon {
+    position: absolute;
+    left: .75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--txt2);
+    pointer-events: none
+}
+
+/* Horizontal layout */
+.study-layout-h {
+    display: flex;
+    gap: 2rem;
+    align-items: flex-start;
+    text-align: left;
+    width: 100%
+}
+
+.study-layout-h>div {
+    flex: 1;
+    min-width: 0
+}
+
+/* Layout toggle */
+.layout-toggle {
+    display: inline-flex;
+    border-radius: var(--r-s);
+    overflow: hidden;
+    border: 1px solid var(--brd)
+}
+
+.layout-toggle label {
+    padding: .6rem 1.25rem;
+    background: var(--sfc);
+    color: var(--txt2);
+    font-size: .85rem;
+    cursor: pointer;
+    transition: var(--tr);
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    min-height: 44px
+}
+
+.layout-toggle input {
+    display: none
+}
+
+.layout-toggle input:checked+label {
+    background: var(--pri);
+    color: #fff
+}
+
 /* Animations */
 @keyframes fadeIn {
     from {
@@ -552,5 +628,10 @@ a {
 
     .card:hover {
         transform: none
+    }
+
+    .study-layout-h {
+        flex-direction: column;
+        gap: 1rem
     }
 }
